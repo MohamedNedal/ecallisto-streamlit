@@ -1,105 +1,92 @@
-# Solar Radio Explorer (SRE)
+# e-CALLISTO Globe Explorer
 
-A Streamlit application for loading, inspecting, cleaning, and exporting solar radio
-dynamic spectra from ground- and space-based instruments. Built for researchers and
-students working on solar radio bursts.
+A Streamlit application for browsing the e-CALLISTO solar radio spectrograph
+network, fetching FITS files within a chosen UT window, and processing /
+visualising dynamic spectra.
 
-## Supported instruments (v0.1)
+## Features
 
-Ground-based: e-CALLISTO, LOFAR / I-LOFAR (Solar KSP dynspec FITS), Nançay Decameter
-Array (NDA), ORFEES, NenuFAR (BST/Pulsar HDF5), OVSA / EOVSA.
+- UT date/time range picker, with live search against the e-CALLISTO HTTP
+  archive at `soleil.i4ds.ch/solarradio/data/2002-20yy_Callisto/`.
+- 3D wireframe globe (Plotly Scatter3d). Stations with files in the window are
+  drawn as red dots, all others as faint grey dots. Hovering shows the station
+  name; clicking opens the details panel.
+- Station details panel: code, name, city/country, coordinates, altitude,
+  nominal frequency range, nominal cadence, observed UT range in the search
+  window, number of files. Once a file is loaded the panel also shows the
+  *observed* frequency range and time/frequency cadence from the FITS header.
+- One-click download of one or all files into a user-chosen folder.
+- File loader (upload `.fit` / `.fit.gz`) and quick preview.
+- Processing pipeline: block-mean downsampling in time and frequency, smooth
+  cropping on both axes, and a choice of background-subtraction methods:
+  - Quiet-Sun window (median or mean)
+  - Running median along the time axis
+  - Lowest decile per channel
+  - Polynomial detrend per channel
+- Publication-style visualisation: colour map, vmin/vmax percentile sliders,
+  inverted/log frequency axis, grid, colourbar, figure size, DPI.
+- Export the figure as PNG / PDF / EPS / SVG and the processed array as `.npz`.
 
-Space-based: Parker Solar Probe / FIELDS (RFS LFR+HFR), Solar Orbiter / RPW (TNR+HFR),
-STEREO / Waves (SWAVES), WIND / Waves (RAD1+RAD2+TNR).
-
-v0.1 assumes the data files are already on disk. Remote fetching from CDAWeb,
-LOFAR LTA, soleil.i4ds.ch, etc. is planned for v0.2.
-
-## Installation
+## Install
 
 ```bash
-git clone https://github.com/<your-user>/solar-radio-explorer.git
-cd solar-radio-explorer
 python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Tested against Python 3.10–3.12.
-
-## Running the app
+## Run
 
 ```bash
 streamlit run app.py
 ```
 
-This opens the app at `http://localhost:8501`. Workflow inside the app:
-
-1. Pick the instrument from the sidebar.
-2. Point to the data file (drag-and-drop upload, or paste an absolute path if the file
-   is larger than Streamlit's upload limit).
-3. Optionally set the time window of interest (UTC) for cropping on load.
-4. Click *Load*. The dynamic spectrum and metadata appear on the main panel.
-5. Apply downsampling, cropping, and background subtraction from the *Processing*
-   panel. Each step is logged and reversible.
-6. Tweak colour map, dynamic range, axis labels in the *Visualisation* panel.
-7. Export the figure (PNG / PDF / EPS / SVG) and/or the processed array (NPZ / FITS)
-   from the *Export* panel.
-
-## Programmatic use
-
-Every reader returns a `DynamicSpectrum` object, which can also be used outside the
-app. See `examples/quickstart.py`.
-
-```python
-from sre.readers import read
-
-ds = read("callisto", "BLEN7_20170910_063000_59.fit.gz")
-ds = ds.crop(t_start="2017-09-10 06:35", t_end="2017-09-10 06:45")
-ds = ds.subtract_background(method="quiet_window",
-                            t_quiet=("2017-09-10 06:31", "2017-09-10 06:33"))
-ds.plot(cmap="inferno", vmin_pct=5, vmax_pct=99).savefig("burst.pdf")
-```
-
-## File format assumptions
-
-Each reader documents the FITS / CDF / HDF5 schema it expects. If your local pipeline
-emits a variant, the easiest path is to copy the relevant reader module, adjust the
-keyword/variable names, and register it in `sre/readers/__init__.py`.
-
-| Instrument | Container | Notes |
-|---|---|---|
-| e-CALLISTO | FITS | Uses `radiospectra.CallistoSpectrogram` |
-| LOFAR / I-LOFAR | FITS | LOFAR Solar KSP dynspec; expects `TIME` and `FREQ` BinTable columns |
-| NDA | FITS / CDF | CDPP routine spectra |
-| ORFEES | FITS | obs-nancay.fr archive; BinTable with `STOKESI` |
-| NenuFAR | HDF5 | UnDySPuTeD-style `(time, freq)` dataset |
-| OVSA / EOVSA | FITS | EOVSA archive format |
-| PSP / FIELDS | CDF | RFS LFR + HFR (`psp_fld_l2_rfs_*`) |
-| Solar Orbiter / RPW | CDF | `solo_l2_rpw-tnr-surv`, `solo_l2_rpw-hfr-surv` |
-| STEREO / Waves | CDF | `stereo_l3_waves` (CDAWeb) |
-| WIND / Waves | CDF | `wi_l2_wav_rad1`, `wi_l2_wav_rad2`, `wi_l2_wav_tnr` |
-
-## Architecture
+## Project layout
 
 ```
-sre/
-├── spectrum.py        DynamicSpectrum container + crop/downsample/background ops
-├── readers/           One reader per instrument; common interface
-│   ├── base.py
-│   └── <instrument>.py
-├── processing.py      Standalone numerical routines (background, downsample, crop)
-├── plotting.py        Matplotlib figure builder with publication defaults
-└── utils.py           Time/frequency helpers
-app.py                 Streamlit UI
+.
+├── app.py                  # Streamlit entry point
+├── requirements.txt
+├── data/
+│   └── stations.json       # Curated station registry (extend as needed)
+└── ecallisto/
+    ├── __init__.py
+    ├── stations.py         # Registry loader + station matching
+    ├── fetch.py            # Directory walk + FITS download
+    ├── globe.py            # Wireframe globe + station markers
+    ├── processing.py       # Load FITS, downsample, crop, background
+    └── plotting.py         # Matplotlib spectrogram + export
 ```
 
-## Contributing
+## A note on station coordinates
 
-Pull requests welcome, especially additional reader variants or remote-fetch backends.
-Each reader should expose a `read(path, **kwargs) -> DynamicSpectrum` function and be
-registered in `sre/readers/__init__.py::READERS`.
+e-CALLISTO FITS headers reliably carry per-file metadata (frequency axis,
+cadence, observed time range, instrument short code) but they do **not**
+consistently carry geographic coordinates. The globe therefore relies on the
+curated `data/stations.json` for lat/lon, and pulls per-file metadata from the
+FITS header when files are loaded. Extending the JSON is the easiest way to add
+new stations.
 
-## Licence
+## Suggested next features
 
-MIT.
+- Multi-station synchronous plotting: stitched composite spectrogram from
+  overlapping stations to extend the frequency coverage (e.g. BIR 10–90 MHz +
+  HUMAIN 45–870 MHz).
+- Burst-type tagging and labelled time markers from the e-CALLISTO daily
+  burst-list text files.
+- Frequency–drift fitter for type II/III bursts with manual point selection,
+  including an electron-density-model overlay (Newkirk, Saito, Mann) to
+  translate the drift into a radial speed.
+- RFI mask editor: per-channel toggle plus auto-flag from short time-scale
+  statistics.
+- Side-by-side comparison with Solar Orbiter / RPW or Wind / WAVES quick-look
+  spectra fetched via `sunpy.net.Fido`.
+- GOES SXR overlay on the time axis to flag flares co-temporal with bursts.
+- Local solar elevation per station: a small per-station "sun above horizon"
+  badge in the details panel, computed from station lat/lon + UT.
+- Light/Dark theme toggle, and optional Mercator 2D map as an alternative to
+  the globe.
+- Caching layer (`requests-cache` or `st.cache_data`) for the directory walk so
+  repeated searches in the same window are instant.
+- Batch mode: queue many UT windows from a CSV and run the full pipeline
+  unattended.
